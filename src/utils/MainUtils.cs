@@ -87,7 +87,7 @@ namespace Silk {
         /// <returns>The path of the mods folder</returns>
         public static string GetModsFolder()
         {
-            return Path.Combine(Directory.GetCurrentDirectory(), "Silk", "Mods");
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Silk", "Mods");
         }
 
         /// <summary>
@@ -111,7 +111,8 @@ namespace Silk {
         /// <param name="gameTypeRef">A reference type related to the game context.</param>
         public static void Announce(string text, int colorR, int colorG, int colorB) {
             var color = new UnityEngine.Color(colorR, colorG, colorB);
-            Announcer.instance.Announce(text, color, true);
+            if (Announcer.instance != null)
+                Announcer.instance.Announce(text, color, true);
         }
 
         /// <summary>

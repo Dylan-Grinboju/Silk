@@ -42,14 +42,10 @@ namespace Silk.Mods
             {
                 Logger.LogInfo($"Initializing mod: {mod.GetType().Name}");
 
-                // Create a GameObject for the mod
-                GameObject modGameObject = new(mod.GetType().Name);
-
-                // Add the mod as a component
-                modGameObject.transform.SetParent(modsParent.transform);
                 try
                 {
-                    modGameObject.AddComponent(mod.GetType());
+                    mod.transform.SetParent(modsParent.transform);
+                    mod.gameObject.SetActive(true);
                     Logger.LogInfo($"Mod {mod.GetType().Name} initialized successfully");
                 }
                 catch (Exception ex)
@@ -70,6 +66,8 @@ namespace Silk.Mods
         /// <param name="mod">The mod to add</param>
         public static void AddMod(SilkMod mod)
         {
+            if (Mods.Contains(mod))
+                return;
             Logger.LogInfo($"Adding mod: {mod.GetType().Name}");
             Mods.Add(mod);
             Logger.LogInfo($"Mod {mod.GetType().Name} added");

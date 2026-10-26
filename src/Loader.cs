@@ -14,6 +14,7 @@ namespace Silk
     public static class Loader
     {
         private static readonly string ModsFolder = Utils.GetModsFolder();
+        private static readonly HashSet<string> AttemptedModIds = new(StringComparer.Ordinal);
 
         public static List<SilkModData> LoadedMods { get; } = new List<SilkModData>();
         public static List<SilkModData> FailedMods { get; } = new List<SilkModData>();
@@ -72,7 +73,11 @@ namespace Silk
             {
                 var searchPattern = Config.GetConfigValue<string>("loader.modFilePattern");
                 return Directory.GetFiles(ModsFolder, searchPattern, SearchOption.AllDirectories)
-                    .Where(file => file.IndexOf("Disabled", StringComparison.OrdinalIgnoreCase) < 0)
+                    .Where(file => !Path.GetDirectoryName(file.Substring(ModsFolder.Length + 1))
+                        .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Any(directory => directory.Equals("Disabled", StringComparison.OrdinalIgnoreCase)))
+                    .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(file => file, StringComparer.Ordinal)
                     .ToArray();
             }
             catch (Exception ex)
@@ -136,14 +141,17 @@ namespace Silk
                 }
             }
 
-            if (modData.ModNetworkingType == NetworkingType.Server || modData.ModNetworkingType == NetworkingType.Both)
+            if (!AttemptedModIds.Add(modData.ModId))
             {
-                Utils.onlineMods = true;
+                Logger.LogWarning($"Skipping duplicate mod ID '{modData.ModId}' in '{modFile}'. A mod with this ID was already attempted; remove the extra copy.");
+                return;
             }
 
             if (InvokeModEntrypoint(type, modFile, modData.ModEntryPoint))
             {
                 LoadedMods.Add(modData);
+                if (modData.ModNetworkingType == NetworkingType.Server || modData.ModNetworkingType == NetworkingType.Both)
+                    Utils.onlineMods = true;
             }
             else
             {
@@ -167,6 +175,7 @@ namespace Silk
 
         private static bool InvokeModEntrypoint(TypeDefinition type, string modFile, string entryPointName)
         {
+            GameObject? modObject = null;
             try
             {
                 var assembly = Assembly.LoadFrom(modFile);
@@ -178,30 +187,36 @@ namespace Silk
                     return false;
                 }
 
-                var entryPoint = modClass.GetMethod(entryPointName, BindingFlags.Public | BindingFlags.Instance);
+                var entryPoint = modClass.GetMethod(entryPointName, BindingFlags.Public | BindingFlags.Instance,
+                    null, Type.EmptyTypes, null);
                 if (entryPoint == null)
                 {
                     Logger.LogError($"Entry point '{entryPointName}' not found in {modClass.FullName}");
                     return false;
                 }
 
-                var modInstance = Activator.CreateInstance(modClass);
-                
-                // Register with manager
-                if (modInstance is SilkMod silkMod)
+                object modInstance;
+                if (typeof(SilkMod).IsAssignableFrom(modClass))
                 {
-                    Mods.Manager.AddMod(silkMod);
+                    modObject = new GameObject(modClass.Name);
+                    modObject.SetActive(false);
+                    modInstance = modObject.AddComponent(modClass);
                 }
                 else
                 {
+                    modInstance = Activator.CreateInstance(modClass);
                     Logger.LogWarning($"Mod {modClass.FullName} is not a SilkMod instance. Skipping registration.");
                 }
 
                 entryPoint.Invoke(modInstance, null);
+                if (modInstance is SilkMod silkMod)
+                    Mods.Manager.AddMod(silkMod);
                 return true;
             }
             catch (Exception ex)
             {
+                if (modObject != null)
+                    UnityEngine.Object.Destroy(modObject);
                 Logger.LogError($"Exception invoking entry point for {type.FullName}: {ex}");
                 return false;
             }

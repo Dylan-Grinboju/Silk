@@ -31,8 +31,8 @@ namespace Silk {
         [HarmonyPostfix]
         public static async void Postfix()
         {
-            await Updater.CheckForUpdates();
             ModsUI.Initialize();
+            await Updater.CheckForUpdates();
         }
     }
 

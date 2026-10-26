@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.Net.Http" />
     <Reference Include="0Harmony">
       <HintPath>lib/0Harmony.dll</HintPath>
       <Private>true</Private>
@@ -38,7 +39,12 @@
     </Reference>
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(GameLibsPath)' == ''">
     <PackageReference Include="SpiderHeck.GameLibs" Version="99.1.6.2" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GameLibsPath)' != ''">
+    <Reference Include="$(GameLibsPath)/*.dll" Exclude="$(GameLibsPath)/Silk.dll;$(GameLibsPath)/0Harmony.dll;$(GameLibsPath)/Mono*.dll;$(GameLibsPath)/YamlDotNet.dll">
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>

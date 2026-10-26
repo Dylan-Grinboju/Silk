@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CS8632;SYSLIB0014</NoWarn>
+    <SilkSourceRoot Condition="'$(SilkSourceRoot)' == ''">../../src</SilkSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <Compile Include="$(SilkSourceRoot)/Config.cs" Link="Production/Config.cs" />
+    <Compile Include="$(SilkSourceRoot)/Loader.cs" Link="Production/Loader.cs" />
+    <Compile Include="$(SilkSourceRoot)/Updater.cs" Link="Production/Updater.cs" />
+    <Compile Include="$(SilkSourceRoot)/Patcher.cs" Link="Production/Patcher.cs" />
+    <Compile Include="$(SilkSourceRoot)/mods/ModManager.cs" Link="Production/ModManager.cs" />
+    <Compile Include="$(SilkSourceRoot)/mods/ISilkMod.cs" Link="Production/ISilkMod.cs" />
+    <Compile Include="$(SilkSourceRoot)/mods/ModAttribute.cs" Link="Production/ModAttribute.cs" />
+    <Compile Include="$(SilkSourceRoot)/misc/SilkModData.cs" Link="Production/SilkModData.cs" />
+    <Compile Include="$(SilkSourceRoot)/misc/Enum.cs" Link="Production/Enum.cs" />
+    <Compile Include="$(SilkSourceRoot)/utils/MainUtils.cs" Link="Production/MainUtils.cs" />
+  </ItemGroup>
+</Project>

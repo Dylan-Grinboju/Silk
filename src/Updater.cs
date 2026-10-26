@@ -70,7 +70,16 @@ namespace Silk
         {
             if (!Config.GetConfigValue<bool>("updater.checkForUpdates")) return;
             Logger.LogInfo("Checking for updates...");
-            var latestVersion = await GetLatestVersion();
+            string latestVersion;
+            try
+            {
+                latestVersion = await GetLatestVersion();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Could not check for Silk updates: {ex.Message}");
+                return;
+            }
             Logger.LogInfo($"Latest version: {latestVersion}");
             if (VersionHandler.IsOlderThan(latestVersion))
             {
@@ -110,21 +119,13 @@ namespace Silk
         /// Downloads the latest version string from the web.
         /// </summary>
         /// <returns>A task that resolves to the latest version string.</returns>
-        /// <remarks>
-        /// This is a blocking call that will block until the download is complete.
-        /// </remarks>
-        private static Task<string> GetLatestVersion()
+        private static async Task<string> GetLatestVersion()
         {
             Logger.LogInfo("Checking for latest version...");
 
-            // Download the latest version
-            using WebClient client = new();
-
-            // Get the latest version
-            var Response = client.DownloadString(LatestVersionUrl);
-
-            // Return the latest version
-            return Task.FromResult(Response.Trim());
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var response = await client.GetStringAsync(LatestVersionUrl);
+            return response.Trim();
         }
 
         /// <summary>

@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Globalization;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using UnityEngine;
@@ -20,31 +22,15 @@ namespace Silk
 
         public static void LoadConfig(Dictionary<string, object> defaultConfig)
         {
-            _defaultConfig = defaultConfig;
+            _defaultConfig = CloneConfig(defaultConfig);
             Logger.LogInfo("Loading config...");
-
-            if (!File.Exists(ConfigFile))
-            {
-                Logger.LogInfo("Config file not found, creating it with default values.");
-                _config = _defaultConfig;
-                SaveConfig();
-            }
-            else
-            {
-                var deserializer = new DeserializerBuilder()
-                    .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                    .Build();
-
-                var raw = deserializer.Deserialize<object>(File.ReadAllText(ConfigFile));
-                var userConfig = NormalizeYamlObjects(raw) as Dictionary<string, object> ?? new Dictionary<string, object>();
-                _config = MergeConfigs(_defaultConfig, userConfig);
-                SaveConfig(); // Save to add new default values to the user's file
-            }
+            _config = ReadConfig(ConfigFile, _defaultConfig);
+            SaveConfig();
         }
 
         private static Dictionary<string, object> MergeConfigs(Dictionary<string, object> defaultConfig, Dictionary<string, object> userConfig)
         {
-            var mergedConfig = new Dictionary<string, object>(defaultConfig);
+            var mergedConfig = CloneConfig(defaultConfig);
 
             foreach (var item in userConfig)
             {
@@ -59,6 +45,75 @@ namespace Silk
             }
 
             return mergedConfig;
+        }
+
+        private static Dictionary<string, object> CloneConfig(Dictionary<string, object> config)
+        {
+            return config.ToDictionary(pair => pair.Key, pair => CloneValue(pair.Value));
+        }
+
+        private static object CloneValue(object value)
+        {
+            if (value is Dictionary<string, object> dictionary)
+                return CloneConfig(dictionary);
+            if (value is IList<object> list)
+                return list.Select(CloneValue).ToList();
+            return value;
+        }
+
+        private static Dictionary<string, object> ReadConfig(string path, Dictionary<string, object> defaults)
+        {
+            if (!File.Exists(path))
+                return CloneConfig(defaults);
+
+            var yaml = File.ReadAllText(path);
+            try
+            {
+                var raw = new DeserializerBuilder()
+                    .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                    .Build().Deserialize<object>(yaml);
+                var normalized = NormalizeYamlObjects(raw);
+                if (normalized != null && !(normalized is Dictionary<string, object>))
+                    throw new InvalidDataException("The config root must be a YAML mapping.");
+                return MergeConfigs(defaults, normalized as Dictionary<string, object> ?? new());
+            }
+            catch (Exception ex) when (ex is YamlException || ex is InvalidDataException)
+            {
+                var backup = path + ".invalid-" + Guid.NewGuid().ToString("N") + ".bak";
+                File.Copy(path, backup);
+                Logger.LogError($"Invalid config '{path}': {ex.Message}. Original saved to '{backup}'. Using defaults.");
+                return CloneConfig(defaults);
+            }
+        }
+
+        private static T ConvertValue<T>(object value)
+        {
+            if (value is T typed)
+                return typed;
+            return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        }
+
+        // Replace only after serialization and the complete temporary write succeed.
+        private static void WriteConfig(string path, Dictionary<string, object> config)
+        {
+            var yaml = new SerializerBuilder()
+                .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                .Build().Serialize(config);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporaryPath, yaml);
+                if (File.Exists(path))
+                    File.Replace(temporaryPath, path, null);
+                else
+                    File.Move(temporaryPath, path);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+            }
         }
 
         public static T GetConfigValue<T>(string key, T? defaultValue = default)
@@ -80,7 +135,7 @@ namespace Silk
                     }
                 }
 
-                return (T)Convert.ChangeType(currentNode, typeof(T));
+                return ConvertValue<T>(currentNode);
             }
             catch (Exception ex)
             {
@@ -111,17 +166,7 @@ namespace Silk
 
         public static void SaveConfig()
         {
-            if (!Directory.Exists(ConfigPath))
-            {
-                Directory.CreateDirectory(ConfigPath);
-            }
-
-            var serializer = new SerializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build();
-
-            var yaml = serializer.Serialize(_config);
-            File.WriteAllText(ConfigFile, yaml);
+            WriteConfig(ConfigFile, _config);
         }
 
         private static object NormalizeYamlObjects(object obj)
@@ -148,40 +193,10 @@ namespace Silk
             if (string.IsNullOrEmpty(modId))
                 throw new ArgumentException("Mod ID cannot be null or empty", nameof(modId));
 
-            _defaultModConfigs[modId] = defaultConfig ?? new Dictionary<string, object>();
+            _defaultModConfigs[modId] = CloneConfig(defaultConfig ?? new Dictionary<string, object>());
             var configPath = GetModConfigPath(modId);
-            var configDir = Path.GetDirectoryName(configPath);
-            
-            if (!Directory.Exists(configDir))
-            {
-                Directory.CreateDirectory(configDir);
-            }
-
-            if (!File.Exists(configPath))
-            {
-                Logger.LogInfo($"Config file for {modId} not found, creating it with default values.");
-                _modConfigs[modId] = new Dictionary<string, object>(_defaultModConfigs[modId]);
-                SaveModConfig(modId);
-            }
-            else
-            {
-                try
-                {
-                    var deserializer = new DeserializerBuilder()
-                        .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                        .Build();
-
-                    var raw = deserializer.Deserialize<object>(File.ReadAllText(configPath));
-                    var userConfig = NormalizeYamlObjects(raw) as Dictionary<string, object> ?? new Dictionary<string, object>();
-                    _modConfigs[modId] = MergeConfigs(new Dictionary<string, object>(_defaultModConfigs[modId]), userConfig);
-                    SaveModConfig(modId); // Save to add new default values to the user's file
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError($"Failed to load config for {modId}: {ex.Message}");
-                    _modConfigs[modId] = new Dictionary<string, object>(_defaultModConfigs[modId]);
-                }
-            }
+            _modConfigs[modId] = ReadConfig(configPath, _defaultModConfigs[modId]);
+            SaveModConfig(modId);
         }
 
         public static T GetModConfigValue<T>(string modId, string key, T defaultValue = default)
@@ -206,7 +221,7 @@ namespace Silk
                     }
                 }
 
-                return (T)Convert.ChangeType(currentNode, typeof(T));
+                return ConvertValue<T>(currentNode);
             }
             catch (Exception ex)
             {
@@ -247,19 +262,7 @@ namespace Silk
                 return;
 
             var configPath = GetModConfigPath(modId);
-            var configDir = Path.GetDirectoryName(configPath);
-            
-            if (!Directory.Exists(configDir))
-            {
-                Directory.CreateDirectory(configDir);
-            }
-
-            var serializer = new SerializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build();
-
-            var yaml = serializer.Serialize(config);
-            File.WriteAllText(configPath, yaml);
+            WriteConfig(configPath, config);
         }
     }
 }
